@@ -30,7 +30,9 @@ interface AnalysisResult {
   link?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE || "https://financial-sentiment-ai.onrender.com";
+
 
 const Index = () => {
   const [headline, setHeadline] = useState("");
