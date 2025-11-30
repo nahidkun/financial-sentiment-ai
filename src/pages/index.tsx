@@ -19,8 +19,9 @@ import stockChart from "@/assets/stock-chart.jpg";
 import forexChart from "@/assets/forex-chart.jpg";
 import financialGraphs from "@/assets/financial-graphs.jpg";
 
-//const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-const API_URL = "http://127.0.0.1:5000";
+// const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL ?? "https://financial-sentiment-ai.onrender.com";
+
 
 type SentimentType = "positive" | "negative" | "neutral" | null;
 
