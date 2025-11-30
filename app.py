@@ -5,6 +5,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote
+import os
 
 app = Flask(__name__)
 CORS(app)  # allow frontend localhost + vercel
@@ -113,4 +114,5 @@ def api_analyze():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
