@@ -14,14 +14,11 @@ import {
   CheckCircle2,
   Brain,
   Zap,
+  ExternalLink,
 } from "lucide-react";
 import stockChart from "@/assets/stock-chart.jpg";
 import forexChart from "@/assets/forex-chart.jpg";
 import financialGraphs from "@/assets/financial-graphs.jpg";
-
-// const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-const API_URL = import.meta.env.VITE_API_URL ?? "https://financial-sentiment-ai.onrender.com";
-
 
 type SentimentType = "positive" | "negative" | "neutral" | null;
 
@@ -31,29 +28,9 @@ interface AnalysisResult {
   timestamp: Date;
   explanation: string;
   link?: string;
-  polarity?: number;
 }
 
-interface ApiSummary {
-  Positive: { count: number; percent: number };
-  Negative: { count: number; percent: number };
-  Neutral: { count: number; percent: number };
-}
-
-interface ApiArticle {
-  title: string;
-  link: string;
-  published: string;
-  sentiment: string; // "Positive" | "Negative" | "Neutral"
-  polarity: number;
-}
-
-interface ApiResponse {
-  query: string;
-  total_articles: number;
-  summary: ApiSummary;
-  articles: ApiArticle[];
-}
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000";
 
 const Index = () => {
   const [headline, setHeadline] = useState("");
@@ -61,66 +38,75 @@ const Index = () => {
   const [sortBy, setSortBy] = useState<"date" | "time" | "sentiment">("time");
   const [filterBy, setFilterBy] = useState<SentimentType | "all">("all");
   const [isLoading, setIsLoading] = useState(false);
-  const [summary, setSummary] = useState<ApiSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const queryLabel = headline.trim() || "gold market";
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    positive: number;
+    negative: number;
+    neutral: number;
+  } | null>(null);
 
   const analyzeHeadline = async () => {
-    const query = queryLabel;
+    const query = headline.trim();
+    if (!query) return;
+
     setIsLoading(true);
-    setError(null);
+    setErrorMsg(null);
 
     try {
-      console.log("Sending request to:", `${API_URL}/api/analyze`);
-      
-      const res = await fetch(`${API_URL}/api/analyze`, {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          num_articles: 15,
-        }),
+        body: JSON.stringify({ query, limit: 10 }),
       });
 
       if (!res.ok) {
-        throw new Error(`API error: ${res.status} ${res.statusText}`);
+        const text = await res.text();
+        console.error("Backend error:", text);
+        setErrorMsg("Backend returned an error. Check the Flask console.");
+        setIsLoading(false);
+        return;
       }
 
-      const data: ApiResponse = await res.json();
+      const data = await res.json();
 
-      const explanations: { [key: string]: string } = {
-        positive:
-          "This headline contains optimistic language and positive financial indicators.",
-        negative:
-          "This headline shows bearish sentiment with negative market signals.",
-        neutral:
-          "This headline presents factual information without strong directional bias.",
-      };
+      const articles = (data.articles || []) as any[];
 
-      const mappedResults: AnalysisResult[] = data.articles.map((a) => {
-        const s = a.sentiment.toLowerCase();
-        const sentiment: SentimentType =
-          s === "positive" || s === "negative" || s === "neutral"
-            ? s
-            : null;
+      const mapped: AnalysisResult[] = articles.map((a) => {
+        const sentiment = (a.sentiment || "neutral") as SentimentType;
+        const ts = a.published ? new Date(a.published) : new Date();
+
+        const explanation =
+          a.explanation ||
+          `Polarity score: ${
+            typeof a.polarity === "number"
+              ? a.polarity.toFixed(3)
+              : String(a.polarity ?? "")
+          }`;
 
         return {
           headline: a.title,
           sentiment,
-          timestamp: new Date(a.published || Date.now()),
-          explanation: explanations[sentiment || "neutral"],
+          timestamp: ts,
+          explanation,
           link: a.link,
-          polarity: a.polarity,
         };
       });
 
-      setResults(mappedResults);
-      setSummary(data.summary);
-      setHeadline("");
-    } catch (err: any) {
+      setResults(mapped);
+      if (data.summary) {
+        setSummary({
+          positive: data.summary.positive ?? 0,
+          negative: data.summary.negative ?? 0,
+          neutral: data.summary.neutral ?? 0,
+        });
+      } else {
+        setSummary(null);
+      }
+    } catch (err) {
       console.error(err);
-      setError(err.message ?? "Something went wrong");
+      setErrorMsg(
+        "Could not reach the backend. Is python app.py running on port 5000?"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -129,18 +115,21 @@ const Index = () => {
   const clearResults = () => {
     setResults([]);
     setSummary(null);
-    setError(null);
+    setErrorMsg(null);
   };
 
   const exportResults = () => {
+    if (!results.length) return;
+
     const csv = [
-      ["Headline", "Sentiment", "Date", "Time", "Explanation"],
+      ["Headline", "Sentiment", "Date", "Time", "Link", "Explanation"],
       ...results.map((r) => [
-        r.headline,
+        `"${r.headline.replace(/"/g, '""')}"`,
         r.sentiment || "",
         r.timestamp.toLocaleDateString(),
         r.timestamp.toLocaleTimeString(),
-        r.explanation,
+        r.link || "",
+        `"${r.explanation.replace(/"/g, '""')}"`,
       ]),
     ]
       .map((row) => row.join(","))
@@ -189,7 +178,7 @@ const Index = () => {
       return b.timestamp.getTime() - a.timestamp.getTime();
     }
     if (sortBy === "sentiment") {
-      const order: { [key: string]: number } = {
+      const order: Record<NonNullable<SentimentType>, number> = {
         positive: 3,
         neutral: 2,
         negative: 1,
@@ -216,8 +205,7 @@ const Index = () => {
               Financial News Sentiment Analyzer
             </h1>
             <p className="text-xl md:text-2xl text-primary-foreground/90 font-medium">
-              Analyze financial news headlines instantly with AI-powered
-              sentiment detection
+              Analyze financial news headlines instantly with AI-powered sentiment detection
             </p>
           </div>
 
@@ -225,30 +213,39 @@ const Index = () => {
             <div className="flex flex-col gap-4">
               <div className="flex gap-3 flex-col sm:flex-row">
                 <Input
-                  placeholder="Enter topic (e.g., 'gold market', 'tesla stock')"
+                  placeholder="Enter financial news headline (e.g., 'Tesla stock crashes 15%')"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") analyzeHeadline();
-                  }}
+                  onKeyDown={(e) => e.key === "Enter" && analyzeHeadline()}
                   className="flex-1 h-14 text-lg border-2 focus-visible:ring-primary"
                 />
                 <Button
                   onClick={analyzeHeadline}
                   size="lg"
-                  className="h-14 px-8 bg-primary hover:bg-primary-dark text-primary-foreground font-bold text-lg shadow-md hover:shadow-lg transition-smooth hover:scale-105"
                   disabled={isLoading}
+                  className="h-14 px-8 bg-primary hover:bg-primary-dark text-primary-foreground font-bold text-lg shadow-md hover:shadow-lg transition-smooth hover:scale-105 disabled:opacity-70 disabled:hover:scale-100"
                 >
-                  <Search className="w-5 h-5 mr-2" />
-                  {isLoading ? "Analyzing..." : "Analyze Sentiment"}
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                      Analyzing...
+                    </span>
+                  ) : (
+                    <>
+                      <Search className="w-5 h-5 mr-2" />
+                      Analyze Sentiment
+                    </>
+                  )}
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                Try topics like: gold market, tesla stock, crypto, or federal
-                reserve
+                Try full headlines like: &quot;Gold prices surge after Fed cuts rates&quot; or
+                &quot;Stocks crash amid recession fears&quot;
               </p>
-              {error && (
-                <p className="text-sm text-red-500 text-center">{error}</p>
+              {errorMsg && (
+                <p className="text-sm text-red-500 text-center mt-2">
+                  {errorMsg}
+                </p>
               )}
             </div>
           </Card>
@@ -259,58 +256,6 @@ const Index = () => {
       {results.length > 0 && (
         <section className="py-16 px-4 bg-secondary/30">
           <div className="container mx-auto max-w-6xl">
-            {/* Summary */}
-            {summary && (
-              <Card className="p-6 mb-8 shadow-md border-2">
-                <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Brain className="w-5 h-5 text-primary" />
-                      <span className="font-semibold text-lg">
-                        Overall sentiment for “{queryLabel}”
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Headlines fetched from live financial news sources and
-                      analyzed by the backend AI service.
-                    </p>
-                  </div>
-                  <div className="flex gap-4 text-sm">
-                    <div className="flex flex-col">
-                      <span className="flex items-center gap-1 text-emerald-500">
-                        <TrendingUp className="w-4 h-4" />
-                        Positive
-                      </span>
-                      <span className="font-semibold">
-                        {summary.Positive.percent.toFixed(1)}% (
-                        {summary.Positive.count})
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="flex items-center gap-1 text-red-500">
-                        <TrendingDown className="w-4 h-4" />
-                        Negative
-                      </span>
-                      <span className="font-semibold">
-                        {summary.Negative.percent.toFixed(1)}% (
-                        {summary.Negative.count})
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="flex items-center gap-1 text-slate-600">
-                        <Minus className="w-4 h-4" />
-                        Neutral
-                      </span>
-                      <span className="font-semibold">
-                        {summary.Neutral.percent.toFixed(1)}% (
-                        {summary.Neutral.count})
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
             {/* Filters & Sort */}
             <Card className="p-6 mb-8 shadow-md border-2">
               <div className="flex flex-col lg:flex-row gap-6 justify-between items-start lg:items-center">
@@ -320,19 +265,17 @@ const Index = () => {
                     <span className="font-semibold">Filter:</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {(["all", "positive", "negative", "neutral"] as const).map(
-                      (filter) => (
-                        <Button
-                          key={filter}
-                          onClick={() => setFilterBy(filter)}
-                          variant={filterBy === filter ? "default" : "outline"}
-                          size="sm"
-                          className="transition-smooth capitalize"
-                        >
-                          {filter}
-                        </Button>
-                      )
-                    )}
+                    {(["all", "positive", "negative", "neutral"] as const).map((filter) => (
+                      <Button
+                        key={filter}
+                        onClick={() => setFilterBy(filter)}
+                        variant={filterBy === filter ? "default" : "outline"}
+                        size="sm"
+                        className="transition-smooth capitalize"
+                      >
+                        {filter}
+                      </Button>
+                    ))}
                   </div>
                 </div>
 
@@ -365,9 +308,8 @@ const Index = () => {
                   key={idx}
                   className="p-6 hover:shadow-lg transition-smooth border-l-4 animate-fade-in"
                   style={{
-                    borderLeftColor: `hsl(var(--${getSentimentColor(
-                      result.sentiment
-                    )}))`,
+                    // @ts-ignore: using CSS var
+                    borderLeftColor: `hsl(var(--${getSentimentColor(result.sentiment)}))`,
                     animationDelay: `${idx * 0.1}s`,
                   }}
                 >
@@ -377,9 +319,7 @@ const Index = () => {
                         <Badge
                           className={`mt-1 px-3 py-1 font-bold text-sm bg-${getSentimentColor(
                             result.sentiment
-                          )} text-${getSentimentColor(
-                            result.sentiment
-                          )}-foreground`}
+                          )} text-${getSentimentColor(result.sentiment)}-foreground`}
                         >
                           <span className="flex items-center gap-1">
                             {getSentimentIcon(result.sentiment)}
@@ -393,22 +333,9 @@ const Index = () => {
                       <p className="text-muted-foreground mb-3">
                         {result.explanation}
                       </p>
-                      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                      <div className="flex gap-4 text-sm text-muted-foreground">
                         <span>📅 {result.timestamp.toLocaleDateString()}</span>
                         <span>🕐 {result.timestamp.toLocaleTimeString()}</span>
-                        {typeof result.polarity === "number" && (
-                          <span>📊 Polarity: {result.polarity.toFixed(3)}</span>
-                        )}
-                        {result.link && (
-                          <a
-                            href={result.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-primary underline"
-                          >
-                            Open article
-                          </a>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -535,8 +462,8 @@ const Index = () => {
                 COMP 415 – Artificial Intelligence
               </h3>
               <p className="text-lg text-muted-foreground mb-6">
-                A university project demonstrating rule-based sentiment analysis
-                for financial news headlines
+                A university project demonstrating rule-based sentiment analysis for financial news
+                headlines
               </p>
               <div className="mb-6">
                 <img
@@ -551,9 +478,6 @@ const Index = () => {
                 </Badge>
                 <Badge className="px-4 py-2 text-base bg-accent text-accent-foreground">
                   Sentiment Analysis
-                </Badge>
-                <Badge className="px-4 py-2 text-base bg-card border-2">
-                  Financial AI
                 </Badge>
               </div>
             </div>
@@ -575,11 +499,11 @@ const Index = () => {
 
           <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-6">
             {[
-              { name: "Team Member 1", role: "Project Lead & NLP Engineer" },
-              { name: "Team Member 2", role: "Algorithm Developer" },
-              { name: "Team Member 3", role: "Frontend Developer" },
-              { name: "Team Member 4", role: "Data Analyst" },
-              { name: "Team Member 5", role: "UI/UX Designer" },
+              { name: "Nahid Lalá Daúde", role: "Project Leader & Backend dev" },
+              { name: "Allan Cassamo Momade", role: "Frontend Developer" },
+              { name: "Oluwatobi Stephan Olabode", role: "Data Analyst" },
+              { name: "Bezawit Yyehuala Desta", role: "System Tester" },
+              { name: "Kuyeri Chakupadedza Olabode", role: "System Designer" },
             ].map((member, idx) => (
               <Card
                 key={idx}
