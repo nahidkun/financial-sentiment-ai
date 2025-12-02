@@ -332,9 +332,9 @@ const Index = () => {
                           {result.headline}
                         </h3>
                       </div>
-                      <p className="text-muted-foreground mb-3">
+                      {/*<p className="text-muted-foreground mb-3">
                         {result.explanation}
-                      </p>
+                      </p> */}
                       <div className="flex gap-4 text-sm text-muted-foreground">
                         <span>📅 {result.timestamp.toLocaleDateString()}</span>
                         <span>🕐 {result.timestamp.toLocaleTimeString()}</span>
@@ -505,7 +505,7 @@ const Index = () => {
               { name: "Allan Cassamo Momade", role: "Frontend Developer" },
               { name: "Oluwatobi Stephan Olabode", role: "Data Analyst" },
               { name: "Bezawit Yyehuala Desta", role: "System Tester" },
-              { name: "Kuyeri Chakupadedza Olabode", role: "System Designer" },
+              { name: "Kuyeri Chakupadedza Kuyeri", role: "System Designer" },
             ].map((member, idx) => (
               <Card
                 key={idx}
